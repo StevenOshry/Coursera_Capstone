@@ -1,0 +1,745 @@
+---
+title: "Insights into Yelp restaurant ratings through consideration of qualified local reviewers"
+author: "Steven Oshry"
+date: "Sunday, November 22, 2015"
+output: html_document
+---
+## Introduction
+This is an analysis of Yelp data for the 6th annual Yelp Dataset Challenge.  This dataset contains over 1.6 million reviews of 61,000 business from  366,000 users from these 10 cities: Edinburgh, Karlsruhe, Montreal, Waterloo, Pittsburgh, Charlotte, Urbana-Champaign, Phoenix, Las Vegas, and Madison. For details on the dataset challenge see <http://www.yelp.com/dataset_challenge>.
+
+Restaurants have by far the most reviews of all the categories of businesses. Approximately 22,000 of the 61,000 businesses in the database are restaurants and there are more than twice as many restaurants as the next closest category (shopping).  Over 60% of the reviews are for restaurants and this percentage is consistent across the 10 cities represented in the data. This is shown in the first table in the "Results" section below.  Since restaurants are such a major part of Yelp, I decided to focus my project on restaurants with specific emphasis on providing indicators of favorites among local reviewers who also have contributed many reviews. One common criticism of Yelp and other user-based review sites is the questionable trustworthiness of the reviewer and hence the review itself. Additionally, tourists visiting a city may not be as knowledgeable of restaurants that locals favor.  Finally, the restaurant business changes quickly so the recency of the review is considerably more important for restaurants than for other industries. 
+
+This project will attempt to answer 3 questions:
+
+1) Are there many restaurants where local, frequent, recent reviewers differ in their ratings from the other reviewers?
+2) When differences are observed are they statistically significant?
+3) Will it be beneficial to the Yelp restaurant reviews to add a "local favorite" indicator?
+
+Since the Yelp data is from a diverse group of cities, these questions may have different answers based on the geographic region so this will be considered in the analysis.
+
+---
+
+## Methods and Data 
+
+While the data is from 10 different cities, this field unfortunately was not given the data.  There were 378 distinct names in the "city" field of the business data but there was no field to identify them based on which of the 10 major cities they were from.  Fortunately latitude and longitude were part of the business data set so I selected the minumum distance between the business city and each of the 10 cities as the "major city".  This was used to identify each of the 10 cities.   The city of the reviewer was also missing from the data.  This made identifying local reviewers difficult. An approximatation of local reviewer was defined as those users with reviews in a city that were more than 2 weeks apart from each other.  This is by no means a perfect defintion but I feel is was the best approximation given the fields avaialable in the data. 
+<!-- This sequnce adds a blank line --> 
+
+<!-- &nbsp; -->
+This limits the analysis to those reviewers with at least 2 reviews but further analysis of the reviewers with only 1 review revealed that 70% of them were either 1 star or 5 star reviews. Many of these reviews could be accurate but the abundance of strong negative and strong positive hints that these reviewers may not be totally objective.  
+
+Exploratory data analysis was performed for each city examining the total number of reviews (for all categories) for each user.  It was consistenly seen (across the 10 cities)  that approximately 50% of users only have 1 review. For the frequency component of the qualified reviewer, all users with at least 3 reviews were selected.  Finally since the restaurant business changes so frequently, only reviews in the most recent 12 months were considered.  The most review date was January 8, 2015 so only the reviews from January 9, 2014 - January 8, 2015 were considered for the qualified reviewer group.  
+ 
+In summary, the reviewers were split into 2 groups: 1) local (defined as above) with at least 3 reviews and more than 2 reviews in the past 12 months (qualified) and 2) all other reviewers. Reviews that were excluded from botht the qualified group and the other group are reviews from the qualified group that are older than 12 months ago.
+
+The frequency cutoff of 3 reviews for the qaulified group was used because there are only approximately 30% of restaurant reviewers with at least 3 reviews. It was found (through trial and error) that requiring more total reviews for this qualified group reduced the number of restaurants in the analysis.  The distribution of reviewers by total review count and city can be seen in the 2nd table in the "results" section below (total review distribution).
+
+The third table below (Restaurants with a least 3 reviews in both groups by city) showed that Karlsure and Waterloo did not have many restaurants that met this criteria so they were not included in the analysis.
+
+The identification of restaurants with significant differences between the 2 groups of reviewers as performed using Welch's t-test.  The assumptions were unequal sample sizes and unequal variances.  For this test the Welch-Satterwaite equation to calculate degress of freedom as used and 2 sided statistical significance was calculated.  Only restaurants with at least 3 reviews from the "qualified" group and the "other" group were evaluated to make the comparisons more valid as a sample size of 2 would have high varaince and m.
+
+Correlation analyses were also preformed to determine the extent of the relationship of the 2 groups of reviewers. Since the rating are only on a 5 point scale, Spearman correlations were also performed on the rankings of the restaurants.  The Spearman correlation is a non-parametric test to determine the extent of a monotonic relationship between the 2 groups of reviewers based on the restaurant rankings. This was done separately by city.  The scatterplots and a table of the correlations and p values by city are shown in the "Results" section below. A summary table of results of the correlations by city , p values of the correlation significance tests, number of restaurants found with significant differences (p value < 0.05) , and percent of total restaurants with significant differences between the 2 groups of reviewers is presented below the scatterplots. 
+
+
+## Results 
+
+The plot below are a summary of the exploratory data analysis.  
+
+```{r read_ext_data, cache=TRUE, echo=FALSE, message=FALSE}
+options( warn = -1)
+#suppressPackageStartupMessages(library("xtable")) 
+
+#suppressPackageStartupMessages(library(tcltk))
+suppressMessages(library(dplyr))
+suppressMessages(library(ggplot2))
+
+setwd("~/Coursera/Capstone")
+# read in data set of 10 mjor cities 
+major_cities <- read.csv("city_lat_lon.csv", header = TRUE,stringsAsFactors = FALSE)
+major_cities$city_num <- seq(1, nrow(major_cities),1)
+biz_data  <- readRDS("./yelp_dataset_challenge_academic_dataset/business_data.rds")
+
+# Calculate distance in kilometers between two points
+earth.dist <- function (long1, lat1, long2, lat2)
+{
+  rad <- pi/180
+  a1 <- lat1 * rad
+  a2 <- long1 * rad
+  b1 <- lat2 * rad
+  b2 <- long2 * rad
+  dlon <- b2 - a2
+  dlat <- b1 - a1
+  a <- (sin(dlat/2))^2 + cos(a1) * cos(b1) * (sin(dlon/2))^2
+  c <- 2 * atan2(sqrt(a), sqrt(1 - a))
+  R <- 6378.145
+  d <- R * c
+  return(d)
+}
+
+
+#assign closest city to each location in biz data based on minimum earth distance
+
+for (data_row in 1:nrow(biz_data)){
+major_cities$distance<-earth.dist(biz_data[data_row,"longitude"],biz_data[data_row,"latitude"],
+                                  major_cities$longitude, major_cities$latitude )
+closest_city <-major_cities[which(major_cities$distance==min(major_cities$distance)),]
+
+biz_data$major_city[data_row]<-closest_city$city
+
+biz_data$major_country[data_row]<-closest_city$Country
+biz_data$city_num[data_row]<-closest_city$city_num
+
+
+}
+#biz_data[,c("full_address","major_city","major_country")]
+biz_data$full_address<-gsub("\n",",",biz_data$full_address)
+
+# find restaurants and create restaurant indicator
+
+for (data_row in 1:nrow(biz_data))
+{
+  
+  category<-biz_data$categories[[data_row]]
+  biz_data$rest_ind[data_row]<-sum(category=="Restaurants")
+ 
+}
+
+library(dplyr)
+# create dataframe of only restuarants 
+biz_data_rest<- subset(biz_data, rest_ind==1, select=c(business_id,   full_address, name, major_country, major_city, city_num, review_count  ))
+
+
+
+# read user data 
+user_data  <- readRDS("./yelp_dataset_challenge_academic_dataset/user_data.rds")
+
+
+
+review_data  <- readRDS("./yelp_dataset_challenge_academic_dataset/review_data.rds")
+review_data$real_date<-as.Date(review_data$date, format = "%Y-%m-%d")
+review_data$l12mon <-review_data$real_date >= '2014-01-09'
+
+most_recent <-max(review_data$real_date)
+
+
+review_data_subs<-review_data[, c("user_id" , "review_id",   "stars",  "business_id" ,"real_date","l12mon" )]
+# add city to review_data
+biz_cities<- biz_data[, c("city_num", "major_city", "business_id", "rest_ind")]
+#now merge this to review_data
+review_data_w_city <-merge(review_data_subs, biz_cities,by="business_id" )
+
+#  EDA of reviews by restaurant vs non-resaurant industry
+
+
+reviews_ind_w_factor <-review_data_w_city[,]
+
+reviews_ind_w_factor$ind_type <- as.factor(ifelse(reviews_ind_w_factor$rest_ind==1  ,
+                                   "Restaurant", "Oth")
+)
+
+
+
+# This part makes table of restaurant reviews by city
+
+city_sumry_review_type_tbl <- as.data.frame(reviews_ind_w_factor %>%
+  select(major_city, city_num , review_id, ind_type) %>%
+  group_by (major_city, city_num ,ind_type)  %>%
+    summarise(reviews=n_distinct(review_id) ) %>%
+    mutate(Restaurant_pct_tot_Reviews=reviews/sum(reviews)*100)  
+  
+)
+ 
+
+ 
+sumry_review_type_tbl <- as.data.frame(reviews_ind_w_factor %>%
+                                         select( review_id, ind_type) %>%
+                                         group_by (ind_type)  %>%
+                                         summarise(reviews=n_distinct(review_id) ) %>%
+                                         mutate(Restaurant_pct_tot_Reviews=reviews/sum(reviews)*100)
+)
+sumry_review_type_tbl$city_num<-11
+sumry_review_type_tbl$major_city="ALL"
+sumry_review_type_tbl2<- rbind(city_sumry_review_type_tbl,sumry_review_type_tbl)
+
+sumry_review_type_tbl2<-sumry_review_type_tbl2<-sumry_review_type_tbl2 %>%
+  filter(ind_type=="Restaurant") %>%
+  select(city=major_city, reviews, Restaurant_pct_tot_Reviews) %>%
+    arrange(desc(reviews))
+
+# end make table of restaurant reviews by city
+
+
+# end make table of restaurant reviews by city
+
+
+review_data_restr <-merge(review_data_subs, biz_data_rest, by="business_id")
+
+
+
+# prep wprk to idenitfy frequent local reviewer
+# for each user and city, count reviews and get first and last review date
+
+review_by_user_city_tbl<- as.data.frame(review_data_w_city  %>%
+  select(major_city, city_num ,user_id, real_date, review_id) %>%
+  group_by(major_city, city_num ,user_id) %>%
+  summarize(min_date= min(real_date),max_date= max(real_date), reviews=n_distinct(review_id) )
+)
+review_by_user_city_tbl$local<- ifelse(review_by_user_city_tbl$max_date-review_by_user_city_tbl$min_date>14,"Y","N")
+review_by_user_city_tbl$local_freq<-ifelse(review_by_user_city_tbl$local=="Y"&review_by_user_city_tbl$reviews>2,"Y","N")
+
+```
+
+
+
+
+
+
+
+
+
+
+```{r read_make_comparison_data, cache=TRUE, echo=FALSE, message=FALSE}
+
+
+
+#field "local_freq" was created for each reviewer in each city if there were at least 3 reviews in that city and the time period spanned
+# more than 2 weeks
+
+
+user_city_good_reviewer_tbl<-subset(review_by_user_city_tbl, select= c("user_id", "city_num", "local_freq"))
+review_data_restr2<-merge(review_data_restr,user_city_good_reviewer_tbl, by=c("user_id", "city_num")  )
+#table(review_data_restr2$major_city,review_data_restr2$local_freq)
+
+#loacl data set is Local reviewrs AND ONLY reviews in last 12 months
+review_restr_local<-subset(review_data_restr2, local_freq=="Y"  &  l12mon==1)
+
+
+review_restr_oth<-subset(review_data_restr2, local_freq=="N")
+# get review summary by restaurant for all restaurants and cities
+# this is what Yelp site looks like
+
+reviews_by_rest_all<- as.data.frame(review_data_restr2  %>%
+                                      select(major_city, city_num , business_id, name, stars,  review_id) %>%
+                                      group_by(major_city, city_num , business_id, name) %>%
+                                      summarize(avg_all=mean(stars), reviews_all=n_distinct(review_id), sd_all=sd(stars) )
+)
+
+
+reviews_by_rest_all_ranked <-as.data.frame(reviews_by_rest_all   %>%
+                                                                                  
+                                             arrange(city_num, desc(avg_all), desc(reviews_all) ) %>%
+                                             group_by ( city_num )  %>%
+                                             mutate(rank_all=row_number())
+)
+
+# finish creating review data all
+
+
+
+
+
+#create data frame of major city , restaurant, all reviews, avg_review for local_freq
+
+reviews_by_rest_loc<- as.data.frame(review_restr_local  %>%
+  select(major_city, city_num , business_id, name, stars,  review_id) %>%
+  group_by(major_city, city_num , business_id, name) %>%
+  summarize(avg_l=mean(stars), reviews_l=n_distinct(review_id), sd_l=sd(stars) )
+)
+
+
+reviews_by_rest_loc_ranked <-as.data.frame(reviews_by_rest_loc   %>%
+  #use filter to keep only restaurants with 3 or more local frequent reviewers
+    
+                                             filter(reviews_l>2)     %>%                                      
+  arrange(city_num, desc(avg_l), desc(reviews_l) ) %>%
+  group_by ( city_num )  %>%
+mutate(rank_l=row_number())
+)
+
+# create dataframe for restaurants reviewed by non-local_freq reviewers
+#then compare differences
+reviews_by_rest_oth<- as.data.frame(review_restr_oth  %>%
+                                      select(major_city, city_num , business_id, name, stars,  review_id) %>%
+                                      group_by(major_city, city_num , business_id, name) %>%
+                                      summarize(avg_oth=mean(stars), reviews_oth=n_distinct(review_id), sd_oth=sd(stars))
+)
+
+
+reviews_by_rest_oth_ranked <-as.data.frame(reviews_by_rest_oth   %>%
+                                             #use filter to keep only restaurants with 3 or more local frequent reviewers
+                                             
+                                             filter(reviews_oth>2)     %>%                                      
+                                             arrange(city_num, desc(avg_oth), desc(reviews_oth) ) %>%
+                                             group_by ( city_num )  %>%
+                                             mutate(rank_oth=row_number())
+)
+
+
+#compare ratings and rank for local frequent reviewrs  vs non-local
+
+reviews_oth_subs<-reviews_by_rest_oth_ranked[,c("business_id","avg_oth","reviews_oth","rank_oth", "sd_oth")]
+loc_vs_oth_df <- merge(reviews_by_rest_loc_ranked,reviews_oth_subs,by="business_id" )
+loc_vs_oth_df2<- as.data.frame( loc_vs_oth_df %>%
+  arrange(city_num, rank_l) 
+)
+
+# create function for ttest between groups
+
+
+T_pval <- function (avg_1, avg_2, sd_1, sd_2, reviews_1, reviews_2)
+{
+  #Welch's t-test for unequal sample sizes, unequal variances using the Welch-Satterwaite equation to calculate degress of freedom
+  var_1 <-sd_1^2
+  var_2 <-sd_2^2
+  t_denom<-sqrt(var_1/reviews_1 + var_2/reviews_2)
+  t_numer <-abs(avg_1 - avg_2)
+  t_stat_calced<- -1*t_numer/t_denom
+  # calculate degrees of freedom
+  df_num <- (var_1/reviews_1 + var_2/reviews_2)^2
+  # denominator has 2 parts
+  df_denom <- ((var_1/reviews_1)^2/(reviews_1-1)) + ((var_2/reviews_2)^2/(reviews_2-1))
+  deg_freed_calced<-df_num/df_denom
+  pval<-2*pt(t_stat_calced,deg_freed_calced)
+  return(pval)
+}
+loc_vs_oth_df2$sig_test<-T_pval(loc_vs_oth_df2$avg_l,loc_vs_oth_df2$avg_oth,loc_vs_oth_df2$sd_l,
+                                loc_vs_oth_df2$sd_oth, loc_vs_oth_df2$reviews_l, loc_vs_oth_df2$reviews_oth
+)
+loc_vs_oth_df2$sig_test[loc_vs_oth_df2$sd_l==0&loc_vs_oth_df2$sd_oth==0& loc_vs_oth_df2$avg_l==loc_vs_oth_df2$avg_oth] <-1
+loc_vs_oth_df2$sig_test[loc_vs_oth_df2$sd_l==0&loc_vs_oth_df2$sd_oth==0& loc_vs_oth_df2$avg_l!=loc_vs_oth_df2$avg_oth] <-0
+
+
+
+loc_vs_oth_df2$p_value<-as.numeric(round(loc_vs_oth_df2$sig_test,2))
+loc_vs_oth_df2$sig_star<-ifelse(loc_vs_oth_df2$p_value<=0.05,"*", "")
+
+
+# sds=0 means are same Ek9oZDBw3sC_ZxVyHMPFdg
+# sds=0 means are diff m_BnpyGYYMxrcqLALaRwjA
+
+# if any city < 30 restaurants delte them
+#table(loc_vs_oth_df2$city_num)
+# after looking at table, get rid of cities 2 & 4
+comparison_df <-subset(loc_vs_oth_df2, city_num!=2 & city_num!=4)
+comparison_df$sig_diff<- comparison_df$p_value<=0.05
+comparison_df$significant.difference<-ifelse( comparison_df$p_value<=0.05, "Yes", "No")
+
+
+
+```
+
+
+### Restaurant Reviews By City
+
+
+```{r EDA_plots, echo=FALSE,fig.width=11, fig.height = 5, fig.align='center', cache=TRUE,   message=FALSE}
+
+
+
+review_by_user_city_tbl$review_grp <-cut(review_by_user_city_tbl$reviews, breaks=c(0,1,2,4,10, Inf),
+                                   labels=c("1","2", "3-4", "5-10", ">10"))
+review_by_user_city_tbl$review_grp_2 <- ifelse(review_by_user_city_tbl$reviews<5, "0-4", "10+")
+
+user_buckets_df <-as.data.frame(review_by_user_city_tbl  %>%
+  select(major_city, numb_reviews= review_grp, user_id) %>%
+  group_by(major_city,  numb_reviews ) %>%
+  summarize( users=n_distinct(user_id) ) %>%
+    mutate( pct=users/sum(users)*100 ) 
+  
+)
+
+
+
+# make rest_rvwr_EDA_tbl
+
+# make rest_rvwr_EDA_tbl
+# create qualified_review_ind
+review_data_restr2$Qualified_ind<-ifelse(review_data_restr2$local_freq=="N", "N",
+                                         ifelse(review_data_restr2$local_freq=="Y" & review_data_restr2$l12mon==1,"Y", "O"   )
+)
+
+
+
+
+
+
+
+
+revwr_bus_EDA_tbl<- as.data.frame(review_data_restr2 %>%
+                                    filter(Qualified_ind !="O")     %>%      
+                                    select(city=major_city, business_id   ,review_id, Qualified_ind, user_id) %>%
+                                    group_by(city,business_id,Qualified_ind  ) %>%
+                                    summarize( reviews=n_distinct(review_id) )
+)
+
+qualified_bus_tbl<-as.data.frame(revwr_bus_EDA_tbl %>%
+                                   filter(Qualified_ind =="Y" & reviews>2)     %>%      
+                                   select(city, business_id   ) %>%
+                                   group_by(city,business_id)
+  
+                                   )
+Not_qual_bus_tbl<-as.data.frame(revwr_bus_EDA_tbl %>%
+                                   filter(Qualified_ind =="N" & reviews>2)     %>%      
+                                   select(city, business_id   ) %>%
+                                   group_by(city,business_id)
+                                 
+)
+
+  
+  
+  
+  
+
+business_EDA_tbl<- merge(x=qualified_bus_tbl,y=Not_qual_bus_tbl, by="business_id")
+names(business_EDA_tbl)[2]="city"
+business_EDA_tbl2<-as.data.frame(business_EDA_tbl %>%
+                                   select(city, business_id   ) %>%
+                                  group_by(city) %>%
+                                   summarize( restaurants=n_distinct(business_id) )%>%
+                                 arrange( desc(restaurants))
+)
+
+
+
+
+
+
+library(ggplot2)
+
+q<- ggplot(sumry_review_type_tbl2,aes(x=city, y=Restaurant_pct_tot_Reviews))+ geom_bar(stat='identity', width=0.5)
+q<- q +   theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust=1))
+q<- q + ggtitle("Restaurant % of reviews by city")
+q<- q+ theme(plot.title = element_text(size=10, face="bold"))
+q<- q+theme(axis.title.x = element_text(face="bold", colour="black", size=8))
+q<- q+theme(axis.title.y = element_text(face="bold", colour="black", size=12))
+
+q<- q+theme(axis.text = element_text(face="bold", colour="black", size=10))
+q<- q+ labs(x=NULL,y="Percent of Reviews")
+
+q<- q+ylim(0,100)
+
+w<- ggplot(user_buckets_df,aes(x=major_city, y=pct, fill=numb_reviews))+ geom_bar(stat='identity', colour="black", width=0.5)
+w<- w+ guides(fill=guide_legend(reverse=TRUE))
+w<- w + scale_fill_brewer(palette=2)
+w<- w +   theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust=1))
+w<- w + ggtitle("Total Review distribution\n Reviewers by city")
+w<- w+ theme(plot.title = element_text(size=10, face="bold"))
+w<- w+theme(axis.title.x = element_text(face="bold", colour="black", size=8))
+w<- w+theme(axis.title.y = element_text(face="bold", colour="black", size=12))
+w<- w+ guides(fill=guide_legend(title=NULL))
+w<- w +  theme(legend.text=element_text(size=8, face="bold"))
+w<- w+theme(axis.text = element_text(face="bold", colour="black", size=10))
+w<- w+ labs(x=NULL,y="Percent of Users")
+
+
+z<- ggplot(business_EDA_tbl2,aes(x=city, y=restaurants))+ geom_bar(stat='identity', width=0.5)
+z<- z +   theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust=1))
+z<- z + ggtitle("Restaurants with at least 3 reviews \n  Qual & Non-qual users \n by city")
+z<- z+ theme(plot.title = element_text(size=10, face="bold"))
+z<- z+theme(axis.title.x = element_text(face="bold", colour="black", size=8))
+z<- z+theme(axis.title.y = element_text(face="bold", colour="black", size=12))
+
+z<- z+theme(axis.text = element_text(face="bold", colour="black", size=10))
+z<- z+ labs(x=NULL,y="Restaurants")
+
+
+
+
+library(grid)
+pushViewport(viewport(layout = grid.layout(1, 3)))
+print(q, vp = viewport(layout.pos.row = 1, layout.pos.col = 1))
+print(w, vp = viewport(layout.pos.row = 1, layout.pos.col = 2))
+print(z, vp = viewport(layout.pos.row = 1, layout.pos.col = 3))
+```
+<!-- This sequnce adds a blank line --> 
+
+&nbsp;
+
+ &nbsp; 
+ 
+ &nbsp; 
+  
+ 
+ &nbsp; 
+  
+#### Scatterplots of Qualified Reviewer Restaurant Ratings vs Other Reviewer
+
+```{r scatter plots ,fig.height=7,fig.width=12, echo=FALSE, message=FALSE}
+options( warn = -1)
+#Show scatter plots
+
+# put this after plot to write to file
+suppressMessages(library(ggplot2))
+#library(ggplot2)
+
+s<- ggplot(comparison_df , aes(x=avg_oth, y=avg_l,colour=significant.difference))  +geom_point( size=3) 
+s<- s+ labs(x="Other Reviewer Rating ",y="Rating from Qualified Reviewers")
+s<- s+ scale_color_manual(values = c("darkblue",  "red"))
+#s<- s+ stat_smooth(method=lm, formula= y~ x,level=0.95)
+s<- s + ggtitle("Qualified Reviewer vs Other Reviewer  Restaurant Ratings")
+s<- s + theme(plot.title = element_text(size=20, face="bold"))
+s<- s+theme(axis.title = element_text(face="bold", colour="black", size=20))
+s<- s+theme(axis.text = element_text(face="bold", colour="black", size=15))
+s<- s+ theme(panel.background = element_rect(fill="lightblue"))
+s<- s + theme( panel.grid.major = element_line(size = 0.5, linetype = 'dashed',
+                                        colour = "black") )
+s<- s+  theme( axis.line = element_line(colour = "black", 
+                                    size = 1, linetype = "solid"))
+s<- s+ facet_wrap( ~major_city, ncol=3) 
+s<- s+  theme(strip.text=element_text(face="bold", size=17),
+        strip.background=element_rect(fill="white", colour="black", 
+                                      size=1))
+s<- s+ theme(legend.justification=c(1,0), legend.position=c(1,0))
+# Title appearance
+s<- s+  theme(legend.title = element_text(colour="black", size=15, face="bold"))
+
+# Label appearance
+s<- s+ theme(legend.text = element_text(colour="black", size = 15, face = "bold"))
+s<- s+  theme(legend.background = element_rect(fill="gray90", size=.5, linetype="dotted"))
+s<- s+ylim(1,5)
+
+#s<- s+ theme(axis.ticks.margin = unit(1, "cm"))
+
+s  
+
+
+
+
+
+```
+
+&nbsp;
+
+
+### Correlation Analysis between Qualified Reviewer Restaurant Ratings \n and Other Reviewer by City
+
+```{r get_corrs, cache=TRUE, echo=FALSE, message=FALSE, results='asis' }
+# create empty data_frame
+options( warn = -1)
+suppressPackageStartupMessages(library("xtable")) 
+
+#suppressPackageStartupMessages(library(tcltk))
+suppressMessages(library(dplyr))
+corr_test_df <- data.frame(
+                     
+                           city=character(),
+                           corr.pearson=double(),
+                           pvalue.pearson=double(),
+                           corr.spearman=double(),
+                           pvalue.spearman=double(),
+                           restaurants=integer(),
+                           significant.restaurants=integer(),
+                           sig.pct=character(),
+                 stringsAsFactors=FALSE)
+
+unique_city_nums <-as.data.frame(comparison_df   %>%
+                                   select(city_num, city=major_city, business_id, sig_diff) %>%
+                                   group_by(city_num, city) %>%
+                                   summarize(restaurants=n_distinct(business_id), found_diff=sum(sig_diff))  %>%
+                                   mutate(sig_pct=paste(round(100*found_diff/restaurants,0),"%",sep = "")) %>%
+                                   arrange(desc(restaurants))
+                                 
+)
+
+
+
+unique_city_nums <-arrange(unique_city_nums, desc(restaurants))
+unique_city_nums$city_num2 <- seq(1, nrow(unique_city_nums),1)
+
+
+  
+  
+
+
+
+for (data_row in 1:nrow(unique_city_nums))
+{
+# get correlation coeffiecient
+
+corr_test_df[data_row,"corr.pearson"]<- as.numeric(round(cor(comparison_df$avg_l[comparison_df$city_num==unique_city_nums[data_row,"city_num"]],
+                                   comparison_df$avg_oth[comparison_df$city_num==unique_city_nums[data_row,"city_num"]],method="pearson"),3))
+
+corr_test_df[data_row,"pvalue.pearson"]<- as.numeric(round(cor.test(comparison_df$avg_l[comparison_df$city_num==unique_city_nums[data_row,"city_num"]],
+                                                       comparison_df$avg_oth[comparison_df$city_num==unique_city_nums[data_row,"city_num"]],
+                                                       method="pearson", alternative = "two.sided")$p.value,3))
+
+
+corr_test_df[data_row,"corr.spearman"]<- as.numeric(round(cor(comparison_df$avg_l[comparison_df$city_num==unique_city_nums[data_row,"city_num"]],
+                                                             comparison_df$avg_oth[comparison_df$city_num==unique_city_nums[data_row,"city_num"]],
+                                                             method="spearman"),3))
+
+corr_test_df[data_row,"pvalue.spearman"]<- as.numeric(round(cor.test(comparison_df$avg_l[comparison_df$city_num==unique_city_nums[data_row,"city_num"]],
+                                                                    comparison_df$avg_oth[comparison_df$city_num==unique_city_nums[data_row,"city_num"]],
+                                                                    method="spearman", alternative = "two.sided")$p.value,3))
+corr_test_df[data_row,"city"]<-unique_city_nums[data_row,"city"]
+corr_test_df[data_row,"restaurants"]<-unique_city_nums[data_row,"restaurants"]
+
+corr_test_df[data_row,"significant.restaurants"]<-unique_city_nums[data_row,"found_diff"]
+corr_test_df[data_row,"sig.pct"]<-unique_city_nums[data_row,"sig_pct"]
+
+
+}
+
+
+
+
+
+
+
+tableCat <- function(inFrame) {
+    outText <- paste(names(inFrame), collapse = " | ")
+    outText <- c(outText, paste(rep("---", ncol(inFrame)), collapse = " | "))
+    invisible(apply(inFrame, 1, function(inRow) {
+        outText <<- c(outText, paste(inRow, collapse = " | "))
+    }))
+    return(outText)
+}
+
+
+
+corr_test_df_ins<-tableCat(corr_test_df)
+
+cat(corr_test_df_ins, sep = "\n")
+
+
+
+
+#print(xtable(corr_test_df), type='html', comment = FALSE, include.rownames=FALSE)
+
+
+```
+
+
+&nbsp;
+The restaurants that have stastically significant differences between the qualified and other reviewer group are highlighted in red on the scatterplots.  The table above shows that there are approximately 10% of the restaurants in each city that show significant differences between the 2 groups. This addresses questions posed in the Introduction that there are indeed many restaurants where the 2 groups differ  and there are also many that are statistically significant.
+
+The correlation analysis showed that there is a siginicant correlation (p pvalues < 0.01) between the ratings from the qualified reviewers and the other reviewers for all the cities.  The Pearson correlation is very similar to the Spearman correlation for all the cities tested.  
+
+Although there is an overall correlation between the 2 groups of reviewers, the scatterplots show significant dispersion around the linear trend that to show thatif we look further we may find some interesting differences that would be helpful to Yelp's users.
+
+For an exmaple of this, below we will look for "Hidden Gems" which are restaurants the the qualified reviewers gave strong ratings but are not currently noticeable in Yelp because their overall rating is not very high. The  "rank_all" column indicates the overall ranking (considering all reviews), sorting by average rating (stars) and using total number of reviews as a tie-breaker.
+
+The reason why the reviews from the qaulified group and the other group do not add up to the total is that reviews from the qualified reviewers older than 12 months are not included in the analysis but are in the total counts.
+
+### Hidden Gems - Restaurants where the Qualified Reviewers rated \n Significantly Higher than other Reviewers
+#### 1) Phoenix
+
+```{r hidden gems, cache=TRUE, echo=FALSE, message=FALSE, results='asis' }
+
+
+# show hidden gems phoenix
+hidden_gem_phnx <-subset(comparison_df, p_value<=0.10 & avg_l>4.5 & avg_oth<=3 & city_num==8 &sig_test <=0.05)
+all_rating_phnx<- subset(reviews_by_rest_all_ranked, city_num==8, select=c("business_id", "avg_all", "reviews_all", "rank_all"))
+hidden_gem_phnx2<-merge(hidden_gem_phnx, all_rating_phnx, by="business_id")
+hidden_gem_phnx2$avg_qual<-as.numeric(round(hidden_gem_phnx2$avg_l,2))
+hidden_gem_phnx2$avg_oth<-as.numeric(round(hidden_gem_phnx2$avg_oth,2))
+hidden_gem_phnx2$avg_all<-as.numeric(round(hidden_gem_phnx2$avg_all,2))
+hidden_gem_phoenix<- as.data.frame(hidden_gem_phnx2  %>%
+                                     select(name, avg_qual, reviews_qual=reviews_l, avg_oth, reviews_oth, avg_all, reviews_all, rank_all, p_value) %>%
+                                   arrange(desc(avg_qual))
+  
+  
+)
+
+
+
+hidden_gem_phoenix_ins<-tableCat(hidden_gem_phoenix)
+
+cat(hidden_gem_phoenix_ins, sep = "\n")
+
+
+```
+
+The 2nd restaurant in this list, Wings Express received a very strong average rating of 4.9 for 8 reviewers in the qualified group   Overall 22 reviewers gave it an average of 3.77 stars which is still good but with an overall restaurant rank in Phoenix of 2,847 (ranked by overall average stars and using number of reviews as a tie-breaker) , it would be very difficult to find on Yelp without the "Local Favorites" flag that I am proposing to be added.
+
+
+#### 2) Las Vegas
+
+```{r hidden_gems_veg, cache=TRUE, echo=FALSE, message=FALSE, results='asis' }
+
+
+# show hidden gems phoenix
+hidden_gem_v <-subset(comparison_df, p_value<=0.10 & avg_l>=4.2 & avg_oth<=3 & city_num==9 &sig_test <=0.05)
+all_rating_v<- subset(reviews_by_rest_all_ranked, city_num==9, select=c("business_id", "avg_all", "reviews_all", "rank_all"))
+hidden_gem_v2<-merge(hidden_gem_v, all_rating_v, by="business_id")
+hidden_gem_v2$avg_qual<-as.numeric(round(hidden_gem_v2$avg_l,2))
+hidden_gem_v2$avg_oth<-as.numeric(round(hidden_gem_v2$avg_oth,2))
+hidden_gem_v2$avg_all<-as.numeric(round(hidden_gem_v2$avg_all,2))
+
+hidden_gem_vegas<- as.data.frame(hidden_gem_v2  %>%
+                                     select(name, avg_qual, reviews_qual=reviews_l, avg_oth, reviews_oth, avg_all, reviews_all,rank_all, p_value) %>%
+                                   arrange(desc(avg_qual))
+  
+  
+)
+
+
+
+hidde<-tableCat(hidden_gem_vegas)
+
+cat(hidde, sep = "\n")
+
+
+```
+
+This illustrates a flaw in this method.  Note that Auntie Annies Pretzels has a high ranking by the qualified reviewers.  These pretzel stands are ubiquitous all over America and they can hardly be considered "hidden gems".  The high rating is based on only 3 reviews so perhaps the method could be made stronger by requiring more reviews in each group.
+
+#### 3) Montreal
+
+```{r hidden_gems_mont, cache=TRUE, echo=FALSE, message=FALSE, results='asis' }
+
+
+
+# show hidden gems montreal
+hidden_gem_m <-subset(comparison_df,  avg_l>=4 & avg_oth<=3 & city_num==3 &sig_test <=0.05)
+all_rating_m<- subset(reviews_by_rest_all_ranked, city_num==3, select=c("business_id", "avg_all", "reviews_all", "rank_all"))
+hidden_gem_m2<-merge(hidden_gem_m, all_rating_m, by="business_id")
+hidden_gem_m2$avg_qual<-as.numeric(round(hidden_gem_m2$avg_l,2))
+hidden_gem_m2$avg_oth<-as.numeric(round(hidden_gem_m2$avg_oth,2))
+hidden_gem_m2$avg_all<-as.numeric(round(hidden_gem_m2$avg_all,2))
+hidden_gem_montreal<- as.data.frame(hidden_gem_m2  %>%
+                                   select(name, avg_qual, reviews_qual=reviews_l, avg_oth, reviews_oth, avg_all, reviews_all, rank_all, p_value) %>%
+                                   arrange(desc(avg_qual))
+                                 
+                                 
+)
+hidde2<-tableCat(hidden_gem_montreal)
+
+cat(hidde2, sep = "\n")
+
+```
+
+While there are only 4 reviewers in the qualified group for each of these 2 restaurants, they gave significantly higher reviews than the other group did.  Since the overall rank in Montreal is over 1,000 for each of these restaurants, being able to identify them with a "local favorites" flag would be beneficial.
+
+<!-- This sequnce adds a blank line --> 
+
+ &nbsp;
+ 
+## Discussion
+
+The motivation for this study is that it was noticed in the initial exploratory data analysis that half of all users only have 1 review and 70% of these reviews are either 1 star or 5 star reviews.  This is an indication that there is room for improvement for an alternative ratings approach.  This was one such approach. 
+
+This analysis showed that while overall there are significant correlations between ratings for the 2 groups of reviews (as shown by the low p values of the correlation tests),  there are many restaurants where the 2 sets of reviewers gave very different reviews. For the eight cities in the analysis, there were consitently 10% of the restaurants where the ratings of the qualified group of reviewers (with only the most recent 12 months of reviews considered) is significantly different than the ratings of the other group of reviewers. 
+
+The Pearson and Spearman correlations are very close to each other in all cities.  This indicates that the strength of the linear association (Pearson) is approximately equal to the stregth of association of the rankings (spearman).
+
+The "Hidden Gems" tables above do show that it would be beneficial to Yelp to add a local favorites flag to the reviews.  By looking at the "rank_oth" column in these tables, it is shown that the highest recent rankings from the qualified reviewer group would be buried very deep in the Yelp restaurants when looking at all the reviews.
+
+The tables above showed the statistically significant results for 3 cities only in those cases where the qualified group had an average rating of 4 or above and the the other group had an average rating of less than 3.  There are many other significant differences such as cases where the qualified group rated significantly lower than the other group (possibly overrated restaurants).  
+
+There were enough significant differences found in the 3 cities (Phoenix, Las Vegas, and Montreal) presented above to give this approach some consideration.  These 3 cities were chosen to analyze because they get a lot of visitors, especially with respect to the other 7 cities in the dataset.
+
+Since the Yelp reviews are on a 5 star system, reviewers may consider the review system ordinal as opposed to a nominal ranking system.  Since the range of the data is so low, it makes it difficult to detect significant diferences.  If Yelp were to change their rating system to a 10 point or even a 7 point scale, it would make this type of methodology more impactful.
+
+
+## Potential Improvements to this Method
+
+The Yelp dataset had very little information about the reviewer.  The methodolgy used to identify local reviewer could be vastly improved if the reviewer's city was given.  Yelp has this information because the reviewer's city is shown on the Yelp website.  Perhaps it was not given due to privacy issues. 
+
+Some type of vetting method should be investigated to quantify the authenticity of a reviewer's first review.  These may be introducing bias into the overall ranking of a restaurnat and make users less likely to use Yelp.
+
+Further research could be done on refining the definition of qualified reviewer, possibly involving cluster analysis or other classification technique. There is other user data that could possibly be part of the cluster analysis such as votes, friends, check-ins, etc.  This approach was used because I wanted to identify local reviewers and it seemed logical from a restaurant perspective to also only consider recent reviews.  
+Additionally, some of the the results indicate that requiring only 3 reviews may be introducing too many errrors.  This will have to be balanced with the requirements needed to be considered a qualified reviewer.
+
+
+
+

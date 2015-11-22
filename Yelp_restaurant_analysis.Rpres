@@ -1,0 +1,186 @@
+<style>  
+.small-code pre code {
+  font-size: 80%;
+  margin-top: -150px;
+}
+</style>  
+<style>  
+.tight-top pre code {
+  margin-top: -150px;
+}
+</style>
+Additional insights Into Yelp restaurant ratings through consideration of qualified local reviewers
+========================================================
+author:Steven Oshry
+date: 11/22/2015  
+transition:rotate  
+
+Summary of Data and Approach
+====
+class:small-code
+- The Yelp dataset contains over 1.6 million reviews of 61,000 business from  366,000 users from  10 cities.
+- The dataset is from 6th annual Yelp Dataset Challenge. Information on the dataset is available [here](http://www.yelp.com/dataset_challenge)
+- This analysis focuses on restaurants because  over 30% of the businesses and over 60% of the reviews are for restaurants.
+- Identify "qualified" reviewers as local (at least 2 reviews from area more than 14 days apart) with over 3 reviews in past 12 months.
+- There were 3 questions addressed in this analysis:
+      -   Are there many restaurants where local, frequent, recent reviewers differ in their ratings from the other reviewers?
+      -   Are obseved differences statistically significant ?
+      -   Will it be beneficial to the Yelp restaurant reviews to add a "local favorite" indicator?
+
+      
+
+Exploratory Data Ananlysis
+====
+
+```{r EDA_plots, echo=FALSE, fig.width=8,fig.height=4,dpi=300,out.width="2500px",height="900px", fig.align='center', cache=TRUE,   message=FALSE}
+options( warn = -1)
+suppressMessages(library(ggplot2))
+setwd("~/Coursera/Capstone")
+comparison_df  <- readRDS("comparison_df.rds")
+reviews_by_rest_all_ranked  <- readRDS("reviews_by_rest_all_ranked.rds")
+user_buckets_df  <- readRDS("user_buckets_df.rds")
+sumry_review_type_tbl2  <- readRDS("sumry_review_type_tbl2.rds")
+business_EDA_tbl2  <- readRDS("business_EDA_tbl2.rds")
+
+# to read it back in    mod2 <- readRDS("mymodel.rds")
+
+q<- ggplot(sumry_review_type_tbl2,aes(x=city, y=Restaurant_pct_tot_Reviews))+ geom_bar(stat='identity', width=0.5)
+q<- q +   theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust=1))
+q<- q + ggtitle("Restaurant % of reviews by city")
+q<- q+ theme(plot.title = element_text(size=10, face="bold"))
+q<- q+theme(axis.title.x = element_text(face="bold", colour="black", size=8))
+q<- q+theme(axis.title.y = element_text(face="bold", colour="black", size=12))
+
+q<- q+theme(axis.text = element_text(face="bold", colour="black", size=10))
+q<- q+ labs(x=NULL,y="Percent of Reviews")
+
+q<- q+ylim(0,100)
+q
+
+w<- ggplot(user_buckets_df,aes(x=major_city, y=pct, fill=numb_reviews))+ geom_bar(stat='identity', colour="black", width=0.5)
+w<- w+ guides(fill=guide_legend(reverse=TRUE))
+w<- w + scale_fill_brewer(palette=2)
+w<- w +   theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust=1))
+w<- w + ggtitle("Total Review distribution\n Reviewers by city")
+w<- w+ theme(plot.title = element_text(size=10, face="bold"))
+w<- w+theme(axis.title.x = element_text(face="bold", colour="black", size=8))
+w<- w+theme(axis.title.y = element_text(face="bold", colour="black", size=12))
+w<- w+ guides(fill=guide_legend(title=NULL))
+w<- w +  theme(legend.text=element_text(size=8, face="bold"))
+w<- w+theme(axis.text = element_text(face="bold", colour="black", size=10))
+w<- w+ labs(x=NULL,y="Percent of Users")
+
+
+z<- ggplot(business_EDA_tbl2,aes(x=city, y=restaurants))+ geom_bar(stat='identity', width=0.5)
+z<- z +   theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust=1))
+z<- z + ggtitle("Restaurants with at least 3 reviews \n  Qual & Non-qual users \n by city")
+z<- z+ theme(plot.title = element_text(size=10, face="bold"))
+z<- z+theme(axis.title.x = element_text(face="bold", colour="black", size=8))
+z<- z+theme(axis.title.y = element_text(face="bold", colour="black", size=12))
+
+z<- z+theme(axis.text = element_text(face="bold", colour="black", size=10))
+z<- z+ labs(x=NULL,y="Restaurants")
+
+
+
+
+library(grid)
+pushViewport(viewport(layout = grid.layout(1, 2)))
+print(q, vp = viewport(layout.pos.row = 1, layout.pos.col = 1))
+print(w, vp = viewport(layout.pos.row = 1, layout.pos.col = 2))
+
+
+#print(z, vp = viewport(layout.pos.row = 1, layout.pos.col = 3))
+
+```
+- Almost all cities have approximately 60% of the reviews as restaurant reviews.
+- Over 50% of reviewers only post 1 review. This could be detrimental to the overall reliablity of the restaurant reviews.
+
+
+Scatterplot  of Qualified vs Other Reviewrs by City
+========================================================
+- Identify qualified reviewers as having 3 or more reviews in past 12 months from area where restaurant is located
+
+```{r EDA_plots2, echo=FALSE, fig.width=8,fig.height=4,dpi=300,out.width="2500px",height="900x", fig.align='center', cache=TRUE,   message=FALSE}
+
+comparison_df2<-subset(comparison_df, city_num %in% c(5,8,9))
+s<- ggplot(comparison_df2 , aes(x=avg_oth, y=avg_l,colour=significant.difference))  +geom_point( size=3) 
+s<- s+ labs(x="Other Reviewer Rating ",y="Qualified Reviewer Rating")
+s<- s+ scale_color_manual(values = c("darkblue",  "red"))
+#s<- s+ stat_smooth(method=lm, formula= y~ x,level=0.95)
+s<- s + ggtitle("Qualified vs. Other reviewer Restaurant Reviewer Ratings")
+s<- s + theme(plot.title = element_text(size=20, face="bold"))
+s<- s+theme(axis.title = element_text(face="bold", colour="black", size=20))
+s<- s+theme(axis.text = element_text(face="bold", colour="black", size=15))
+s<- s+ theme(panel.background = element_rect(fill="lightblue"))
+s<- s + theme( panel.grid.major = element_line(size = 0.5, linetype = 'dashed',
+                                        colour = "black") )
+s<- s+  theme( axis.line = element_line(colour = "black", 
+                                    size = 1, linetype = "solid"))
+s<- s+ facet_wrap( ~major_city, ncol=3) 
+s<- s+  theme(strip.text=element_text(face="bold", size=17),
+        strip.background=element_rect(fill="white", colour="black", 
+                                      size=1))
+s<- s+ theme(legend.position="none")
+
+s<- s+ylim(1,5)
+
+#s<- s+ theme(axis.ticks.margin = unit(1, "cm"))
+
+s  
+```
+- Siginificant differences (based on Welch 2 sample T test) are identified in red.
+
+
+Hidden Gems in Phoenix - Restaurants where the Qualified Reviewers rated Significantly Higher than other Reviewers
+========================================================
+
+
+```{r hidden gems, cache=TRUE, echo=FALSE, message=FALSE, results='asis'}
+options( warn = -1)
+suppressMessages(library(dplyr))
+
+hidden_gem_phnx <-subset(comparison_df, p_value<=0.10 & avg_l>4.5 & avg_oth<=3 & city_num==8 &sig_test <=0.05)
+all_rating_phnx<- subset(reviews_by_rest_all_ranked, city_num==8, select=c("business_id", "avg_all", "reviews_all", "rank_all"))
+hidden_gem_phnx2<-merge(hidden_gem_phnx, all_rating_phnx, by="business_id")
+hidden_gem_phnx2$avg_qual<-as.numeric(round(hidden_gem_phnx2$avg_l,2))
+hidden_gem_phnx2$avg_oth<-as.numeric(round(hidden_gem_phnx2$avg_oth,2))
+hidden_gem_phnx2$avg_all<-as.numeric(round(hidden_gem_phnx2$avg_all,2))
+hidden_gem_phoenix<- as.data.frame(hidden_gem_phnx2  %>%
+                                     select(name, avg_qual, reviews_qual=reviews_l, avg_oth, reviews_oth, avg_all, reviews_all, rank_all, p_value) %>%
+                                   arrange(desc(avg_qual))
+  
+  
+)
+tableCat <- function(inFrame) {
+    outText <- paste(names(inFrame), collapse = " | ")
+    outText <- c(outText, paste(rep("---", ncol(inFrame)), collapse = " | "))
+    invisible(apply(inFrame, 1, function(inRow) {
+        outText <<- c(outText, paste(inRow, collapse = " | "))
+    }))
+    return(outText)
+}
+
+
+
+
+hidden_gem_phoenix_ins<-tableCat(hidden_gem_phoenix)
+
+cat(hidden_gem_phoenix_ins, sep = "\n")
+
+
+
+```
+- Difference between Qualified and Other Group are reviews from Qualified group older than 12 months
+
+Results and Conclusions
+====
+class:small-code
+- This approach was successfull in finding restaurants where local, frequent, recent reviewers have significantly different reviews than other reviewers.
+- There were approximately 10% of restaurants where this difference was signficant in all of the cities examined.
+- Many of the restaurants where the "qualified" group gave significantly higher ratings are not easy to find on Yelp currently.
+- It would be beneficial for Yelp to add a searchable flag for "local favorites" to make it easy for users to find these locations.
+- Further improvements on this method could be made if the reviewer's city and state were given in the data.
+- The R program for the analysis, R Markdown for full report, and this code are [here](https://github.com/StevenOshry/Coursera_Capstone).
+
+
